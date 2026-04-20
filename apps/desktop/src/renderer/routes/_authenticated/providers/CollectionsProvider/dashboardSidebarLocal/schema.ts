@@ -36,6 +36,8 @@ export const workspaceLocalStateSchema = z.object({
 		tabOrder: z.number().int().default(0),
 		sectionId: z.string().uuid().nullable().default(null),
 		changesFilter: changesFilterSchema.default({ kind: "all" }),
+		activeTab: z.enum(["changes", "files"]).default("changes"),
+		changesSubtab: z.enum(["diffs", "review"]).default("diffs"),
 	}),
 	paneLayout: paneWorkspaceStateSchema,
 	rightSidebarOpen: z.boolean().default(false),
@@ -110,9 +112,40 @@ const pendingLinkedPRSchema = z.object({
 	state: z.string(),
 });
 
+/**
+ * Transient dispatch intents written by the pending page after
+ * host-service.create resolves. Consumed by the V2 workspace page's
+ * useConsumePendingLaunch mount effect, then cleared. See
+ * apps/desktop/docs/V2_LAUNCH_CONTEXT.md "Dispatch architecture".
+ */
+const pendingTerminalLaunchSchema = z.object({
+	command: z.string(),
+	name: z.string().optional(),
+	// Attachment filenames, already written to .superset/attachments/
+	// by the pending page via workspaceTrpc.filesystem.writeFile.
+	attachmentNames: z.array(z.string()).default([]),
+});
+
+const pendingChatLaunchSchema = z.object({
+	initialPrompt: z.string().optional(),
+	initialFiles: z
+		.array(
+			z.object({
+				data: z.string(),
+				mediaType: z.string(),
+				filename: z.string().optional(),
+			}),
+		)
+		.optional(),
+	model: z.string().optional(),
+	taskSlug: z.string().optional(),
+});
+
 export type PendingHostTarget = z.infer<typeof pendingHostTargetSchema>;
 export type PendingLinkedIssue = z.infer<typeof pendingLinkedIssueSchema>;
 export type PendingLinkedPR = z.infer<typeof pendingLinkedPRSchema>;
+export type PendingTerminalLaunch = z.infer<typeof pendingTerminalLaunchSchema>;
+export type PendingChatLaunch = z.infer<typeof pendingChatLaunchSchema>;
 
 export const pendingWorkspaceSchema = z.object({
 	// Shared
@@ -121,7 +154,7 @@ export const pendingWorkspaceSchema = z.object({
 	hostTarget: pendingHostTargetSchema,
 	// Which mutation the pending page should run. See V2_WORKSPACE_CREATION.md §3.
 	// Defaults to "fork" for any rows that predate this field.
-	intent: z.enum(["fork", "checkout", "adopt"]).default("fork"),
+	intent: z.enum(["fork", "checkout", "adopt", "pr-checkout"]).default("fork"),
 	name: z.string(),
 	// fork: derived branch name from prompt; checkout/adopt: existing branch.
 	branchName: z.string(),
@@ -152,6 +185,11 @@ export const pendingWorkspaceSchema = z.object({
 
 	// fork + checkout (irrelevant for adopt — worktree already exists).
 	runSetupScript: z.boolean().default(true),
+
+	// Transient dispatch intents written after host-service.create resolves;
+	// consumed by the V2 workspace page on mount, then cleared to null.
+	terminalLaunch: pendingTerminalLaunchSchema.nullable().default(null),
+	chatLaunch: pendingChatLaunchSchema.nullable().default(null),
 });
 
 export type PendingWorkspaceRow = z.infer<typeof pendingWorkspaceSchema>;
